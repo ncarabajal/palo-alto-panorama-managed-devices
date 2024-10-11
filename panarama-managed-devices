@@ -1,0 +1,182 @@
+import requests
+import xml.etree.ElementTree as ET
+import csv
+
+# Panorama hostnames or IPs and corresponding CSV filenames
+panoramas = {
+    'PAN1': 'URL', #multiple panoramas can be called if desired
+}
+
+USERNAME = "USERNAMe"
+PASSWORD = "PASSWORD"
+
+# Step 1: Get API Key using username and password
+def get_api_key(panorama_ip, username, password):
+    url = f"https://{panorama_ip}/api/?type=keygen&user={username}&password={password}"
+    response = requests.get(url, verify=False)
+    if response.status_code == 200:
+        root = ET.fromstring(response.content)
+        api_key = root.find(".//key").text
+        return api_key
+    else:
+        raise Exception(f"Failed to retrieve API key for {panorama_ip}. Status Code: {response.status_code}")
+
+# Step 2: Fetch device details
+def get_device_summary(api_key, panorama_ip):
+    url = f"https://{panorama_ip}/api/?type=op&cmd=<show><devices><all></all></devices></show>&key={api_key}"
+    response = requests.get(url, verify=False)
+    return response.content
+
+# Step 3: Fetch additional fields from "show devicegroups" command
+def get_devicegroups_summary(api_key, panorama_ip):
+    url = f"https://{panorama_ip}/api/?type=op&cmd=<show><devicegroups></devicegroups></show>&key={api_key}"
+    response = requests.get(url, verify=False)
+    return response.content
+
+# Step 4: Fetch template data from "show templates" command
+def get_templates_summary(api_key, panorama_ip):
+    url = f"https://{panorama_ip}/api/?type=op&cmd=<show><templates></templates></show>&key={api_key}"
+    response = requests.get(url, verify=False)
+    return response.content
+
+# Function to create a lookup for templates based on serial numbers
+def create_template_lookup(templates_data):
+    template_root = ET.fromstring(templates_data)
+    template_lookup = {}
+
+    # Iterate over each template entry
+    for template_entry in template_root.findall(".//entry"):
+        template_name = template_entry.attrib.get('name', 'N/A')
+        
+        # Iterate over devices in each template stack
+        for device in template_entry.findall(".//devices/entry"):
+            serial = device.find('serial').text if device.find('serial') is not None else ''
+            if serial:
+                template_lookup[serial] = {
+                    "Template": template_name,
+                    "Status Template": device.find('template-status').text if device.find('template-status') is not None else 'N/A',
+                    "Status Template Last Commit State": device.find('last-commit-all-state-tpl').text if device.find('last-commit-all-state-tpl') is not None else 'N/A'
+                }
+
+    return template_lookup
+
+# Function to create a lookup for device groups based on serial numbers
+def create_devicegroup_lookup(devicegroups_data):
+    devicegroup_root = ET.fromstring(devicegroups_data)
+    devicegroup_lookup = {}
+
+    # Iterate over each device group entry
+    for devicegroup in devicegroup_root.findall(".//devicegroups/entry"):
+        devicegroup_name = devicegroup.attrib.get('name', 'N/A')
+        
+        # Iterate over devices in each device group
+        for device in devicegroup.findall(".//devices/entry"):
+            serial = device.find('serial').text if device.find('serial') is not None else ''
+            if serial:
+                devicegroup_lookup[serial] = {
+                    "Device Group": devicegroup_name,
+                    "Status Shared Policy": device.find('shared-policy-status').text if device.find('shared-policy-status') is not None else 'N/A',
+                    "Status Mode": device.find('express-mode').text if device.find('express-mode') is not None else 'N/A',
+                    "Status Shared Policy Last Commit State": device.find('last-commit-all-state-sp').text if device.find('last-commit-all-state-sp') is not None else 'N/A'
+                }
+
+    return devicegroup_lookup
+
+# Function to parse "show devices, show devicegroups, show templates" XML response and extract the required fields
+def parse_device_info(xml_data, devicegroup_lookup, template_lookup):
+    root = ET.fromstring(xml_data)
+    devices = root.findall(".//entry")
+
+    device_info_list = []
+    for device in devices:
+        serial_number = device.find('serial').text if device.find('serial') is not None else ''
+        device_group_info = devicegroup_lookup.get(serial_number, {})
+        template_info = template_lookup.get(serial_number, {})
+
+        device_info = {
+            "Device Group": device_group_info.get("Device Group", "N/A"),
+            "Device Name": device.find('hostname').text if device.find('hostname') is not None else '',
+            "Virtual System": "N/A",
+            "Model": device.find('model').text if device.find('model') is not None else '',
+            "Tags": "N/A",
+            "Serial Number": serial_number,
+            "IP Address IPv4": device.find('ip-address').text if device.find('ip-address') is not None else '',
+            "IP Address IPv6": device.find('ipv6-address').text if device.find('ipv6-address') is not None else '',
+            "HA HA Pair Status": device.find('.//ha/state').text if device.find('.//ha/state') is not None else '',
+            "Variables": "N/A",
+            "Template": template_info.get("Template", "N/A"),
+            "Status Device State": device.find('connected').text if device.find('connected') is not None else '',
+            "Status Device Certificate": device.find('device-cert-present').text if device.find('device-cert-present') is not None else '',
+            "Status Device Certificate Expiry Date": device.find('device-cert-expiry-date').text if device.find('device-cert-expiry-date') is not None else '',
+            "Status Shared Policy": device_group_info.get("Status Shared Policy", "N/A"),
+            "Status Template": template_info.get("Status Template", "N/A"),
+            "Status Certificate": device.find('device-cert-present').text if device.find('device-cert-present') is not None else '',
+            "Status High Speed Forwarding Mode": device.find('express-mode').text if device.find('express-mode') is not None else '',
+            "Status Mode": device_group_info.get("Status Mode", "N/A"),
+            "Status Shared Policy Last Commit State": device_group_info.get("Status Shared Policy Last Commit State", "N/A"),
+            "Status Template Last Commit State": template_info.get("Status Template Last Commit State", "N/A"),
+            "Status Last Merged Diff": "N/A",
+            "Software Version": device.find('sw-version').text if device.find('sw-version') is not None else '',
+            "Apps And Threat": device.find('app-version').text if device.find('app-version') is not None else '',
+            "Antivirus": device.find('av-version').text if device.find('av-version') is not None else '',
+            "URL Filtering": device.find('url-filtering-version').text if device.find('url-filtering-version') is not None else '',
+            "GlobalProtect Client": device.find('global-protect-client-package-version').text if device.find('global-protect-client-package-version') is not None else '',
+            "WildFire": device.find('wildfire-version').text if device.find('wildfire-version') is not None else '',
+            "Device Dictionary": device.find('device-dictionary-version').text if device.find('device-dictionary-version') is not None else '',
+            "Plugins": device.find(".//plugin_versions/entry/pkginfo").text if device.find(".//plugin_versions/entry/pkginfo") is not None else '',
+            "Last Master Key Push Status": device.find('last-masterkey-push-status').text if device.find('last-masterkey-push-status') is not None else '',
+            "Last Master Key Push Timestamp": device.find('last-masterkey-push-timestamp').text if device.find('last-masterkey-push-timestamp') is not None else ''
+        }
+
+        if any(value for value in device_info.values() if value not in ['', 'N/A']):
+            device_info_list.append(device_info)
+    
+    return device_info_list
+
+# Function to write data to CSV
+def write_to_csv(data, output_file):
+    headers = [
+        "Device Group", "Device Name", "Virtual System", "Model", "Tags", "Serial Number", 
+        "IP Address IPv4", "IP Address IPv6", "HA HA Pair Status", "Variables", "Template", 
+        "Status Device State", "Status Device Certificate", "Status Device Certificate Expiry Date", 
+        "Status Shared Policy", "Status Template", "Status Certificate", 
+        "Status High Speed Forwarding Mode", "Status Mode", "Status Shared Policy Last Commit State", 
+        "Status Template Last Commit State", "Status Last Merged Diff", 
+        "Software Version", "Apps And Threat", "Antivirus", "URL Filtering", 
+        "GlobalProtect Client", "WildFire", "Device Dictionary", "Plugins", 
+        "Last Master Key Push Status", "Last Master Key Push Timestamp"
+    ]
+    
+    with open(output_file, 'w', newline='') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=headers)
+        writer.writeheader()
+        for row in data:
+            writer.writerow(row)
+
+# Main function to gather info from all Panorama devices
+def main():
+    for panorama_ip, filename in panoramas.items():
+        print(f"Connecting to {panorama_ip}...")
+        try:
+            api_key = get_api_key(panorama_ip, USERNAME, PASSWORD)
+            
+            # Fetch data from different commands
+            xml_data = get_device_summary(api_key, panorama_ip)
+            devicegroups_data = get_devicegroups_summary(api_key, panorama_ip)
+            templates_data = get_templates_summary(api_key, panorama_ip)
+
+            # Create lookup dictionaries for device groups and templates
+            devicegroup_lookup = create_devicegroup_lookup(devicegroups_data)
+            template_lookup = create_template_lookup(templates_data)
+            
+            # Parse the devices and include device group and template information
+            device_info_list = parse_device_info(xml_data, devicegroup_lookup, template_lookup)
+            
+            # Write the gathered info to CSV
+            write_to_csv(device_info_list, filename)
+            print(f"Data written to {filename}")
+        except Exception as e:
+            print(f"Error with {panorama_ip}: {e}")
+
+if __name__ == "__main__":
+    main()
