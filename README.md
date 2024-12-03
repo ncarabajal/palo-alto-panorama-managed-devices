@@ -23,7 +23,7 @@ Follow these steps to set up the environment and run the script:
 
 ### 1. Clone the Repository
 ```
-git clone https://github.com/yourusername/managed-device-summary.git
+git clone https://github.com/ngacarabajal/palo-alto-panorama-managed-devices
 cd managed-device-summary
 ```
 ### 2. (Optional) Create a Virtual Environment
