@@ -5,11 +5,9 @@ import getpass
 
 # Panorama hostnames or IPs and corresponding CSV filenames
 panoramas = {
-    'dpano.net.wbd.com': 'dpano_device_summary.csv',
-    'epano.net.wbd.com': 'epano_device_summary.csv',
-    'ppano.net.wbd.com': 'ppano_device_summary.csv',
-    'wb-us-bur-corp-vpan1.warnermedia.com': 'wbpano_device_summary.csv',
-    '10.161.239.227': 'lpano_device_summary.csv'
+    'pano-address-1': 'pano-address-1_device_summary.csv',
+    'pano-address-2': 'pano-address-2_device_summary.csv',
+    'pano-address-3': 'pano-address-3_device_summary.csv',
 }
 
 # Step 1: Get API Key using username and password
