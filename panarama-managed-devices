@@ -1,14 +1,16 @@
 import requests
 import xml.etree.ElementTree as ET
 import csv
+import getpass
 
 # Panorama hostnames or IPs and corresponding CSV filenames
 panoramas = {
-    'PAN1': 'URL', #multiple panoramas can be called if desired
+    'dpano.net.wbd.com': 'dpano_device_summary.csv',
+    'epano.net.wbd.com': 'epano_device_summary.csv',
+    'ppano.net.wbd.com': 'ppano_device_summary.csv',
+    'wb-us-bur-corp-vpan1.warnermedia.com': 'wbpano_device_summary.csv',
+    '10.161.239.227': 'lpano_device_summary.csv'
 }
-
-USERNAME = "USERNAMe"
-PASSWORD = "PASSWORD"
 
 # Step 1: Get API Key using username and password
 def get_api_key(panorama_ip, username, password):
@@ -136,6 +138,7 @@ def parse_device_info(xml_data, devicegroup_lookup, template_lookup):
 # Function to write data to CSV
 def write_to_csv(data, output_file):
     headers = [
+        "Panorama",
         "Device Group", "Device Name", "Virtual System", "Model", "Tags", "Serial Number", 
         "IP Address IPv4", "IP Address IPv6", "HA HA Pair Status", "Variables", "Template", 
         "Status Device State", "Status Device Certificate", "Status Device Certificate Expiry Date", 
@@ -155,10 +158,13 @@ def write_to_csv(data, output_file):
 
 # Main function to gather info from all Panorama devices
 def main():
+    username = input("Enter username: ")
+    password = getpass.getpass("Enter password: ")
+    combined_data = []
     for panorama_ip, filename in panoramas.items():
         print(f"Connecting to {panorama_ip}...")
         try:
-            api_key = get_api_key(panorama_ip, USERNAME, PASSWORD)
+            api_key = get_api_key(panorama_ip, username, password)
             
             # Fetch data from different commands
             xml_data = get_device_summary(api_key, panorama_ip)
@@ -172,11 +178,19 @@ def main():
             # Parse the devices and include device group and template information
             device_info_list = parse_device_info(xml_data, devicegroup_lookup, template_lookup)
             
-            # Write the gathered info to CSV
-            write_to_csv(device_info_list, filename)
-            print(f"Data written to {filename}")
+            # Add Panorama field to each device_info dict
+            for device_info in device_info_list:
+                device_info["Panorama"] = panorama_ip
+
+            # Add the device_info_list to combined_data
+            combined_data.extend(device_info_list)
         except Exception as e:
             print(f"Error with {panorama_ip}: {e}")
+    
+    # After all panoramas are processed, write combined_data to CSV
+    output_file = 'managed_device_summary.csv'
+    write_to_csv(combined_data, output_file)
+    print(f"Combined data written to {output_file}")
 
 if __name__ == "__main__":
     main()
