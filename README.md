@@ -1,6 +1,7 @@
 # palo-alto-panorama-managed-devices
 
 Managed Device Summary Script
+
 This Python script connects to multiple Panorama devices, retrieves information about the managed devices, and compiles the data into a CSV file. It prompts the user for a username and password at runtime to securely authenticate with the Panorama devices.
 
 ## Table of Contents
